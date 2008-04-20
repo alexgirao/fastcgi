@@ -1,0 +1,12 @@
+body
+    {
+    margin-left:1em;
+    margin-right:2em;
+    }
+*.title         { text-align:center; }
+*.author        { text-align:center; }
+*.address       { text-align:center; }
+*.pubdate       { text-align:center; }
+*.screen        { margin-left:4em; text-align:left; }
+*.literallayout { margin-left:4em; text-align:left; }
+*.refnamediv    { margin-bottom:2ex; }
