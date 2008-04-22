@@ -164,7 +164,7 @@ class Server(object):
         protocol = self.protocol
 
         while 1:
-            inputready, outputready, exceptready = select.select(input, output, exception)
+            inputready, outputready, _ = select.select(input, output, exception)
 
             for s in inputready:
 
