@@ -643,7 +643,6 @@ class FastCGIProcessor(object):
 
         while self.eventQueue:
             item = self.eventQueue.pop(0)
-
             try:
                 item[0].callCount += 1
                 # call handler(processor, requestState, record type, related content)
@@ -663,8 +662,6 @@ class FastCGIProcessor(object):
                 traceback.print_exc(file=sys.stdout)
                 item[0].end(1)
         
-        # end for
-
     def processRawInput(self, loseConnection, data):
         if self.pendingData:
             data = self.pendingData + data
