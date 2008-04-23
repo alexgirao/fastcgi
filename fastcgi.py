@@ -215,7 +215,6 @@ def readPair(data, pos):
     return name, value, pos
 
 def splitRecords(data, pos=0):
-    
     r = []
     datalen = len(data)
     while pos < datalen:
@@ -410,6 +409,7 @@ class FastCGIProcessor(object):
         # errors messages respectively
         self.stdout = None
         self.stderr = None
+        self.pendingData = None
         
         # populate configuration
         self.configMaxConns = 10
@@ -595,7 +595,7 @@ class FastCGIProcessor(object):
         self.stdout = stdout
         self.stderr = stderr
 
-    def processInput(self, loseConnection, type, requestId, content):
+    def processRecord(self, loseConnection, type, requestId, content):
         '''process one record at a time, returns the request state
         object if the processed record was an application record
 
@@ -638,6 +638,7 @@ class FastCGIProcessor(object):
         
     def generateOutput(self, handler):
         '''dispatch output handlers for the requests that are ready
+        call handler(processor, requestState, record type, related content)
         '''
 
         while self.eventQueue:
@@ -663,6 +664,44 @@ class FastCGIProcessor(object):
                 item[0].end(1)
         
         # end for
+
+    def processRawInput(self, loseConnection, data):
+        if self.pendingData:
+            data = self.pendingData + data
+            self.pendingData = None
+
+        pos = 0
+        datalen = len(data)
+        associatedRequestState = None       # used for 1 request per connection condition test
+
+        while pos < datalen:
+            if pos + FCGI_HEADER_LEN > datalen:
+                self.pendingData = data[pos:]
+                break
+
+            version, type, requestId, contentLength, paddingLength = _unpack(FCGI_Header, data[pos:pos + FCGI_HEADER_LEN])
+            cpos = pos + FCGI_HEADER_LEN
+
+            if cpos + contentLength + paddingLength > datalen:
+                self.pendingData = data[pos:]
+                break
+
+            content = data[cpos:cpos + contentLength]
+            pos += FCGI_HEADER_LEN + contentLength + paddingLength
+
+            requestState = self.processRecord(loseConnection, type, requestId, content)
+            if requestState:
+                if associatedRequestState:
+                    # ensure that we have one request per connection
+                    # setting
+                    assert requestState is associatedRequestState
+                elif not requestState.keepConnection:
+                    # the web server want us to tie this connection to
+                    # this request and kill the connection as soon as
+                    # the request is over, one request per connection
+                    associatedRequestState = requestState
+
+        return associatedRequestState
 
 def testnamevalues():
     

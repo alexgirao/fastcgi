@@ -29,41 +29,7 @@ class FastCGIProtocol(protocol.Protocol):
     def dataReceived(self, data):
         processor = self.processor
         processor.setStdoutStderrStream(self.transport, self.transport)
-
-        if self.pendingData:
-            data = self.pendingData + data
-            self.pendingData = None
-
-        pos = 0
-        datalen = len(data)
-
-        while pos < datalen:
-            if pos + _FCGI_HEADER_LEN > datalen:
-                self.pendingData = data[pos:]
-                break
-            
-            version, type, requestId, contentLength, paddingLength = _unpack(_FCGI_Header, data[pos:pos + _FCGI_HEADER_LEN])
-            cpos = pos + _FCGI_HEADER_LEN
-            
-            if cpos + contentLength + paddingLength > datalen:
-                self.pendingData = data[pos:]
-                break
-            
-            content = data[cpos:cpos + contentLength]
-            pos += _FCGI_HEADER_LEN + contentLength + paddingLength
-
-            requestState = processor.processInput(self.transport.loseConnection, type, requestId, content)
-            if requestState:
-                if self.associatedRequestState:
-                    # ensure that we have one request per connection
-                    # setting
-                    assert requestState is self.associatedRequestState
-                elif not requestState.keepConnection:
-                    # the web server want us to tie this connection to
-                    # this request and kill the connection as soon as
-                    # the request is over, one request per connection
-                    self.associatedRequestState = requestState
-
+        processor.processRawInput(self.transport.loseConnection, data)
         processor.generateOutput(self.factory.handler)
 
     def connectionLost(self, reason):
