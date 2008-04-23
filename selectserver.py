@@ -136,16 +136,20 @@ class Server(object):
     outputTraceback = True
 
     def createServerSocket(self):
-        # todo: test if port is a numeric value, if not, try to
-        # create a unix socket instead
-        
         if not self.port:
             raise Exception('port to listen to is not defined')
         
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((self.host, self.port))
+        if isinstance(self.port, (str, unicode)):
+            sock = socket.socket(socket.AF_UNIX)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(self.port)
+        else:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((self.host, self.port))
+
         sock.listen(self.backlog)
+
         return sock
 
     def numProtocols(self):

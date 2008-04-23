@@ -20,7 +20,10 @@ def test():
     server = selectfcgi.FastCGIServer(s, handler.handler)
     server.port = 'fcgi.socket'
 
-    server.run()
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        os.unlink(server.port)
 
 if __name__ == '__main__':
     test()

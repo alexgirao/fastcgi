@@ -137,7 +137,10 @@ class FastCGIServer(selectserver.Server):
     def createServerSocket(self):
         if not self.serversocket:
             self.serversocket = selectserver.Server.createServerSocket(self)
-            print 'opening an AF_INET (%r, %i) socket for fastcgi server' % (self.host, self.port)
+            if isinstance(self.port, (str, unicode)):
+                print 'opening an AF_UNIX (%r) socket for fastcgi server' % (self.port)
+            else:
+                print 'opening an AF_INET (%r, %i) socket for fastcgi server' % (self.host, self.port)
         return self.serversocket
 
     def run(self):
