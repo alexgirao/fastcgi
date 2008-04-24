@@ -12,11 +12,9 @@ def handler(processor, request, type, content):
         # can do our logic, this happens once per request
 
         if request.params['SERVER_SOFTWARE'].startswith('lighttpd/'):
-            print 'using lighttpd'
             request.write('content-type: t')
             request.write('ext/plain\r\n\r\n')
         else:
-            print 'using other'
             # nginx requires that the header comes within a single record
             request.write('content-type: text/plain\r\n\r\n')
 

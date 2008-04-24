@@ -365,6 +365,8 @@ class FastCGIRequestState(object):
         self.stdout = None
         self.stderr = None
         self.processor = None
+        self.write = lambda _: None
+        self.error = lambda _: None
 
         try:
             del processor.requests[self.requestId]
@@ -784,7 +786,7 @@ def testprocessor():
 
     try:
         for recordHeader, recordContent in records:
-            requestState = processor.processInput(lambda: None,
+            requestState = processor.processRecord(lambda: None,
                 recordHeader[FCGI_Header_TYPE],
                 recordHeader[FCGI_Header_REQUESTID],
                 recordContent
@@ -841,7 +843,7 @@ def testunknowrole():
         for recordHeader, recordContent in records:
             # successfully processed application records
             # must return a request state
-            assert not processor.processInput(lambda: None,
+            assert not processor.processRecord(lambda: None,
                 recordHeader[FCGI_Header_TYPE],
                 recordHeader[FCGI_Header_REQUESTID],
                 recordContent
@@ -902,7 +904,7 @@ def testgetvalues():
     
     try:
         for recordHeader, recordContent in records:
-            requestState = processor.processInput(lambda: None,
+            requestState = processor.processRecord(lambda: None,
                 recordHeader[FCGI_Header_TYPE],
                 recordHeader[FCGI_Header_REQUESTID],
                 recordContent
