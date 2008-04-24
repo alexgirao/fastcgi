@@ -10,9 +10,16 @@ def handler(processor, request, type, content):
     if type == fastcgi.FCGI_PARAMS:
         # at this point we received all params and we
         # can do our logic, this happens once per request
-        
-        request.write('content-type: text/plain\r\n')
-        request.write('\r\n')
+
+        if request.params['SERVER_SOFTWARE'].startswith('lighttpd/'):
+            print 'using lighttpd'
+            request.write('content-type: t')
+            request.write('ext/plain\r\n\r\n')
+        else:
+            print 'using other'
+            # nginx requires that the header comes within a single record
+            request.write('content-type: text/plain\r\n\r\n')
+
         request.write('request id: %i\n' % request.requestId)
         request.write('role: %s\n' % fastcgi.FCGI_ROLE_NAMES[request.role])
         request.write(pprint.pformat(request.params))
@@ -20,8 +27,8 @@ def handler(processor, request, type, content):
 
     if content:
         length = len(content)
-        if length > displaysize:
-            content = content[0:displaysize] + ' ...'
+        if length > 30:
+            content = content[0:30] + ' ...'
     else:
         content = ''
         length = 0
