@@ -298,8 +298,10 @@ class FastCGIRequestState(object):
     '''a low level class that store and manages request state
     '''
     
-    def __init__(self, processor, requestId, stdout, stderr, loseConnection):
-        self.processor = processor
+    def __init__(self, pool, requestId, stdout, stderr, loseConnection):
+        self.pool = pool
+        pool[requestId] = self
+
         self.requestId = requestId
         self.stdout = stdout            # session affinity is required
         self.stderr = stderr            # session affinity is required
@@ -360,18 +362,15 @@ class FastCGIRequestState(object):
         if not self.keepConnection:
             self.loseConnection()
 
-        processor = self.processor
-
         self.stdout = None
         self.stderr = None
-        self.processor = None
         self.write = lambda _: None
         self.error = lambda _: None
 
-        try:
-            del processor.requests[self.requestId]
-        except KeyError:
-            pass
+        if self.pool:
+            p = self.pool
+            self.pool = None
+            del p[self.requestId]
 
 class FastCGIProcessor(object):
     '''manage requests processing and liveness'''
@@ -405,8 +404,6 @@ class FastCGIProcessor(object):
     showErrors = False
 
     def __init__(self):
-        self.requests = {}
-        
         # streams to respond to management records and
         # errors messages respectively
         self.stdout = None
@@ -420,7 +417,7 @@ class FastCGIProcessor(object):
 
         self.eventQueue = []       # a list of (requestState, FCGI_(type), data)
 
-    def _processGetValues(self, requestState, content):
+    def _processGetValues(self, content):
         # process FCGI_GET_VALUES logic
 
         valuesResult = {}
@@ -440,44 +437,6 @@ class FastCGIProcessor(object):
         self.stdout.write(makeStreamRecord(FCGI_GET_VALUES_RESULT,
             FCGI_NULL_REQUEST_ID, ''.join(dictToPairs(valuesResult))))
 
-    def _processBeginRequest(self, requestState, content):
-        # process FCGI_BEGIN_REQUEST logic
-        
-        requestId = requestState.requestId
-
-        if len(content) != FCGI_BeginRequestBody_STRUCT_LENGTH:
-            self.fatalRequestError(requestState, 'FCGI_BEGIN_REQUEST content length for request %i is invalid: %i bytes' %
-                (requestId, len(content))
-            )
-            return
-
-        role, flags = _unpack(FCGI_BeginRequestBody, content)
-
-        if self.requests.get(requestId, False):
-            self.fatalRequestError(self.requests[requestId],
-                'FCGI_BEGIN_REQUEST(%i) was called for another still live request, aborting' %
-                requestId
-            )
-            requestState.end(3)
-            return
-
-        if role not in FCGI_VALID_ROLES:
-            self.fatalRequestError(requestState, 'FCGI_BEGIN_REQUEST(%i) with an unknown role %i' %
-                (requestId, role), FCGI_UNKNOWN_ROLE)
-            return
-
-        requestState.role = role
-        requestState.keepConnection = bool(flags & FCGI_KEEP_CONN)
-
-        # no keep-connection means no multiplexing for this connection, maybe other
-        # transport connection support, this is up to the web-server
-
-        self.requests[requestId] = requestState
-
-        # sys.stdout.write(' +%i' % requestId)
-        
-        return requestState
-
     def _processParams(self, requestState, content):
         # process FCGI_PARAMS logic
 
@@ -488,7 +447,7 @@ class FastCGIProcessor(object):
         if not content:
             requestState.paramsReady = True
             self.eventQueue.append((requestState, FCGI_PARAMS, None))
-            return requestState
+            return
 
         pos = 0
         _l = len(content)
@@ -500,8 +459,6 @@ class FastCGIProcessor(object):
         if pos != _l:
             self.fatalRequestError(requestState, 'FCGI_PARAMS content is corrupted')
             return
-
-        return requestState
 
     def _processStdin(self, requestState, content):
         # process FCGI_STDIN logic
@@ -519,16 +476,13 @@ class FastCGIProcessor(object):
 
             # notify stdin close
             self.eventQueue.append((requestState, FCGI_STDIN, None))
-
-            return requestState
+            return
 
         requestState.stdinLength += len(content)
 
         # notify stdin input
         self.eventQueue.append((requestState, FCGI_STDIN, content))
         
-        return requestState
-
     def _processData(self, requestState, content):
         # process FCGI_DATA logic
 
@@ -545,15 +499,12 @@ class FastCGIProcessor(object):
 
             # notify data close
             self.eventQueue.append((requestState, FCGI_DATA, None))
-            
-            return requestState
+            return
 
         requestState.dataLength += len(content)
 
         # notify data input
         self.eventQueue.append((requestState, FCGI_DATA, content))
-
-        return requestState
 
     def _processAbortRequest(self, requestState, content):
         # process FCGI_ABORT_REQUEST logic
@@ -566,12 +517,9 @@ class FastCGIProcessor(object):
         # notify abort
         self.eventQueue.append((requestState, FCGI_ABORT_REQUEST, None))
 
-        return requestState
-
-    # all request types that may come from the web server
+    # all request types that may come from the web server, except
+    # FCGI_BEGIN_REQUEST and FCGI_GET_VALUES
     _ws2app = {
-        FCGI_GET_VALUES:    _processGetValues,      # management, stream
-        FCGI_BEGIN_REQUEST: _processBeginRequest,   # request, discrete
         FCGI_ABORT_REQUEST: _processAbortRequest,   # request, discrete
         FCGI_PARAMS:        _processParams,         # request, stream
         FCGI_STDIN:         _processStdin,          # request, stream
@@ -597,7 +545,7 @@ class FastCGIProcessor(object):
         self.stdout = stdout
         self.stderr = stderr
 
-    def processRecord(self, loseConnection, type, requestId, content):
+    def processRecord(self, requestsPool, loseConnection, type, requestId, content):
         '''process one record at a time, returns the request state
         object if the processed record was an application record
 
@@ -611,50 +559,65 @@ class FastCGIProcessor(object):
         specified by FCGI_Header record), no more, no less.
         '''
 
-        try:
-            processor = self._ws2app[type]
-        except KeyError, err:
-            self.warning('invalid request type: %i' % type)
-            return
-
         if type == FCGI_BEGIN_REQUEST:
             # new request state
-            requestState = FastCGIRequestState(self, requestId, self.stdout, self.stderr, loseConnection)
+            if requestId in requestsPool:
+                self.warning('request id %s already created for requests pool %s' % (requestId, id(requestsPool)))
+                return
+            requestState = FastCGIRequestState(requestsPool, requestId, self.stdout, self.stderr, loseConnection)
+
+            role, flags = _unpack(FCGI_BeginRequestBody, content)
+            if role not in FCGI_VALID_ROLES:
+                self.fatalRequestError(requestState, 'FCGI_BEGIN_REQUEST(%i) with an unknown role %i' %
+                                       (requestState.requestId, role), FCGI_UNKNOWN_ROLE)
+                return
+
+            requestState.role = role
+            requestState.keepConnection = bool(flags & FCGI_KEEP_CONN)
+            # no keep-connection means no multiplexing for this connection
+
+            return requestState
         elif type == FCGI_GET_VALUES:
-            # expect FCGI_NULL_REQUEST_ID
-            requestState = None
+            # FCGI_GET_VALUES is a management record, it does not
+            # expect a request id
+            self._processGetValues(content)
+            return
         else:
-            # received FCGI_PARAMS, FCGI_STDIN, FCGI_DATA or FCGI_ABORT_REQUEST
+            # received FCGI_PARAMS, FCGI_STDIN, FCGI_DATA or
+            # FCGI_ABORT_REQUEST
+
             try:
-                requestState = self.requests[requestId]
+                processor = self._ws2app[type]
+            except KeyError, err:
+                self.warning('invalid request type: %i' % type)
+                return
+
+            try:
+                requestState = requestsPool[requestId]
             except KeyError, err:
                 # ignore invalid request ids, just as fcgi-spec.html
                 # says in "Managing Request IDs" section
                 return
 
-        return processor(self, requestState, content)
-
-    def cancelRequest(self, requestState):
-        if requestState.requestId in self.requests:
-            del self.requests[requestState.requestId]
+        processor(self, requestState, content)
+        return requestState
         
     def generateOutput(self, handler):
         '''dispatch output handlers for the requests that are ready
-        call handler(processor, requestState, record type, related content)
+        call handler(requestState, record type, related content)
         '''
 
         while self.eventQueue:
             item = self.eventQueue.pop(0)
             try:
                 item[0].callCount += 1
-                # call handler(processor, requestState, record type, related content)
-                if not handler(self, *item):
+                # call handler(requestState, record type, related content)
+                if not handler(*item):
                     # returning not null value means that the handler expect more data
                     # to come, this is specialy useful for interleaving stdin and stdout
                     # streams (e.g.: respond while receive) or when dealing with
                     # keep-alive connections.
                     item[0].end(0)
-            
             except socket.error:
                 # let protocol/server handle socket related errors
                 raise
@@ -664,14 +627,13 @@ class FastCGIProcessor(object):
                 traceback.print_exc(file=sys.stdout)
                 item[0].end(1)
         
-    def processRawInput(self, loseConnection, data):
+    def processRawInput(self, requestsPool, loseConnection, data):
         if self.pendingData:
             data = self.pendingData + data
             self.pendingData = None
 
         pos = 0
         datalen = len(data)
-        associatedRequestState = None       # used for 1 request per connection condition test
 
         while pos < datalen:
             if pos + FCGI_HEADER_LEN > datalen:
@@ -688,19 +650,7 @@ class FastCGIProcessor(object):
             content = data[cpos:cpos + contentLength]
             pos += FCGI_HEADER_LEN + contentLength + paddingLength
 
-            requestState = self.processRecord(loseConnection, type, requestId, content)
-            if requestState:
-                if associatedRequestState:
-                    # ensure that we have one request per connection
-                    # setting
-                    assert requestState is associatedRequestState
-                elif not requestState.keepConnection:
-                    # the web server want us to tie this connection to
-                    # this request and kill the connection as soon as
-                    # the request is over, one request per connection
-                    associatedRequestState = requestState
-
-        return associatedRequestState
+            self.processRecord(requestsPool, loseConnection, type, requestId, content)
 
 def testnamevalues():
     
@@ -737,7 +687,7 @@ def testprocessor():
     fcgi_stdout = cStringIO.StringIO()
     fcgi_stderr = cStringIO.StringIO()
     
-    def handler(processor, request, type, content):
+    def handler(request, type, content):
         if type == FCGI_PARAMS:
             request.write('content-type: text/plain\r\n\r\n')
             request.write('hello world of real possibilities!!!')
@@ -785,8 +735,9 @@ def testprocessor():
     assert len(records) == 4
 
     try:
+        pool = {}
         for recordHeader, recordContent in records:
-            requestState = processor.processRecord(lambda: None,
+            requestState = processor.processRecord(pool, lambda: None,
                 recordHeader[FCGI_Header_TYPE],
                 recordHeader[FCGI_Header_REQUESTID],
                 recordContent
@@ -823,7 +774,7 @@ def testunknowrole():
     fcgi_stdout = cStringIO.StringIO()
     fcgi_stderr = cStringIO.StringIO()
     
-    def handler(processor, request, type, content):
+    def handler(request, type, content):
         if type == FCGI_PARAMS:
             request.write('content-type: text/plain\r\n\r\n')
             request.write('hello world of real possibilities!!!')
@@ -840,10 +791,11 @@ def testunknowrole():
     assert len(records) == 1
     
     try:
+        pool = {}
         for recordHeader, recordContent in records:
             # successfully processed application records
             # must return a request state
-            assert not processor.processRecord(lambda: None,
+            assert not processor.processRecord(pool, lambda: None,
                 recordHeader[FCGI_Header_TYPE],
                 recordHeader[FCGI_Header_REQUESTID],
                 recordContent
@@ -880,7 +832,7 @@ def testgetvalues():
     fcgi_stdout = cStringIO.StringIO()
     fcgi_stderr = cStringIO.StringIO()
     
-    def handler(processor, request, type, content):
+    def handler(request, type, content):
         if type == FCGI_PARAMS:
             request.write('content-type: text/plain\r\n\r\n')
             request.write('hello world of real possibilities!!!')
@@ -903,8 +855,9 @@ def testgetvalues():
     assert len(records) == 1
     
     try:
+        pool = {}
         for recordHeader, recordContent in records:
-            requestState = processor.processRecord(lambda: None,
+            requestState = processor.processRecord(pool, lambda: None,
                 recordHeader[FCGI_Header_TYPE],
                 recordHeader[FCGI_Header_REQUESTID],
                 recordContent
@@ -921,6 +874,19 @@ def testgetvalues():
         stdout = fcgi_stdout.getvalue()
         stderr = fcgi_stderr.getvalue()
 
+        assert _unpack(FCGI_Header, stdout[:FCGI_HEADER_LEN])[:3] == (
+            FCGI_VERSION_1,
+            FCGI_GET_VALUES_RESULT,
+            FCGI_NULL_REQUEST_ID,
+            )
+
+        params = stdout[FCGI_HEADER_LEN:]
+        l = len(params)
+        pos = 0
+        while pos < l:
+            name, value, pos = readPair(params, pos)
+
+        assert pos == l
         assert stdout
         assert stderr
 
