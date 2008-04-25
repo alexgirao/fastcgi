@@ -351,6 +351,8 @@ class FastCGIRequestState(object):
         self.appStatus = 0              # appStatus used to end this request
         self.needCloseStderr = False
 
+        self.ended = False
+
     def write(self, data):
         '''write to the stdout channel (normal output)
         '''
@@ -373,6 +375,7 @@ class FastCGIRequestState(object):
             # ended already
             return
         
+        self.ended = True
         self.appStatus = appStatus
 
         # close stdout stream
