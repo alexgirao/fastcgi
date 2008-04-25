@@ -19,7 +19,7 @@ def delayed(request):
     request.write('done, request id: %s %s\n' % (request.requestId, time.time()))
     request.end()
 
-def handler(processor, request, type, content):
+def handler(request, type, content):
     if type == fastcgi.FCGI_ABORT_REQUEST:
         print 'request was aborted'
         return

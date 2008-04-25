@@ -108,13 +108,6 @@ class Protocol(object):
         '''
         self.disconnecting = True
 
-    def cleanup(self):
-        '''clean the house and delete cyclic references here
-        '''
-        del self.sock
-        del self.address
-        del self.outputbuffer
-
     #def __del__(self):
     #    print 'omg, im dying!'
 
@@ -179,6 +172,7 @@ class Server(object):
                         output.append(p)
                     elif p.disconnecting:
                         p.sock.close()
+
                         try:
                             p.handleDisconnect(False)
                         except:
@@ -186,10 +180,6 @@ class Server(object):
                                 raise
                             if self.outputTraceback:
                                 traceback.print_exc(file=sys.stdout)
-                        try:
-                            p.cleanup()
-                        except Exception, e:
-                            print 'clean up generated an exception: %r' % str(e)
 
                     else:
                         input.append(p)
@@ -199,6 +189,7 @@ class Server(object):
                             # client closed connection
                             input.remove(s)
                             s.sock.close()
+
                             try:
                                 s.handleDisconnect(True)
                             except:
@@ -206,11 +197,7 @@ class Server(object):
                                     raise
                                 if self.outputTraceback:
                                     traceback.print_exc(file=sys.stdout)
-                            try:
-                                s.cleanup()
-                            except Exception, e:
-                                print 'clean up generated an exception: %r' % str(e)
-                            
+
                             continue
 
                         s.handleInput()
@@ -222,6 +209,7 @@ class Server(object):
                         elif s.disconnecting:
                             input.remove(s)
                             s.sock.close()
+
                             try:
                                 s.handleDisconnect(False)
                             except:
@@ -229,17 +217,23 @@ class Server(object):
                                     raise
                                 if self.outputTraceback:
                                     traceback.print_exc(file=sys.stdout)
-                            try:
-                                s.cleanup()
-                            except Exception, e:
-                                print 'clean up generated an exception: %r' % str(e)
                     
                     except socket.error, (errcode, errmsg):
                         input.remove(s)
+
                         if self.raiseAllErrors:
                             raise
                         if self.outputTraceback:
                             traceback.print_exc(file=sys.stdout)
+
+                        try:
+                            s.handleDisconnect(False)
+                        except:
+                            if self.raiseAllErrors:
+                                raise
+                            if self.outputTraceback:
+                                traceback.print_exc(file=sys.stdout)
+
                         try:
                             s.handleSocketError(errcode, errmsg)
                         except:
@@ -247,16 +241,21 @@ class Server(object):
                                 raise
                             if self.outputTraceback:
                                 traceback.print_exc(file=sys.stdout)
-                        try:
-                            s.cleanup()
-                        except Exception, e:
-                            print 'clean up generated an exception: %r' % str(e)
-                    
+
                     except Exception, e:
                         if self.raiseAllErrors:
                             raise
                         if self.outputTraceback:
                             traceback.print_exc(file=sys.stdout)
+
+                        try:
+                            s.handleDisconnect(False)
+                        except:
+                            if self.raiseAllErrors:
+                                raise
+                            if self.outputTraceback:
+                                traceback.print_exc(file=sys.stdout)
+
                         try:
                             s.handleUnknownException(e)
                         except:
@@ -264,10 +263,6 @@ class Server(object):
                                 raise
                             if self.outputTraceback:
                                 traceback.print_exc(file=sys.stdout)
-                        try:
-                            s.cleanup()
-                        except Exception, e:
-                            print 'clean up generated an exception: %r' % str(e)
 
             for s in outputready:
                 s.flush()
@@ -278,6 +273,7 @@ class Server(object):
                 output.remove(s)
                 if s.disconnecting:
                     s.sock.close()
+
                     try:
                         s.handleDisconnect(False)
                     except:
@@ -285,10 +281,7 @@ class Server(object):
                             raise
                         if self.outputTraceback:
                             traceback.print_exc(file=sys.stdout)
-                    try:
-                        s.cleanup()
-                    except Exception, e:
-                        print 'clean up generated an exception: %r' % str(e)
+
                 else:
                     input.append(s)
 

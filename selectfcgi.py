@@ -8,45 +8,34 @@ import os
 import socket
 import _socket
 import errno
-import struct
 import stat
 
 import selectserver
 import fastcgi
-import cStringIO
 
-StringIO = cStringIO.StringIO
-
-_FCGI_Header = fastcgi.FCGI_Header
-_FCGI_HEADER_LEN = fastcgi.FCGI_HEADER_LEN
-
-_pack = struct.pack
-_unpack = struct.unpack
+FastCGIConnectionState = fastcgi.FastCGIConnectionState
 
 class FastCGIProtocol(selectserver.Protocol):
     '''handles a connection with the web server
     '''
 
     # used for non multiplexed connections
-    associatedRequestState = None
-    processor = None
     server = None
+    processor = None
 
     def handleConnect(self, server):
         self.server = server
         self.processor = server.fcgiProcessor
-        self.associatedRequestState = None
+        self.connectionState = FastCGIConnectionState(self.disconnect, self.write)
 
     def handleInput(self):
-        data = self.read(65536)
-        processor = self.processor
-        processor.setStdoutStderrStream(self, self)
-        processor.processRawInput(self.disconnect, data)
-        processor.generateOutput(self.server.handler)
+        self.processor.processRawInput(self.connectionState, self.read(65536))
+        self.processor.generateOutput(self.server.handler)
 
     def handleDisconnect(self, closedByPeer):
-        #sys.stdout.write(' *%i' % self.server.numProtocols())
-        pass
+        self.connectionState.cleanup()
+        self.connectionState = None
+        self.processor = None
 
     def cleanup(self):
         del self.server

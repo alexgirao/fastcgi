@@ -2,7 +2,7 @@
 import pprint
 import fastcgi
 
-def handler(processor, request, type, content):
+def handler(request, type, content):
     if type == fastcgi.FCGI_ABORT_REQUEST:
         print 'request was aborted'
         return
