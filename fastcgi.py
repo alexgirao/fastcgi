@@ -5,9 +5,6 @@ FastCGI implementation that supports all features from specification
 version 1.0 of 29 April 1996, no later version was known from the time
 of this effort.
 
-This implementation expects session affinity from the web server when
-using multiplexed connections, this is the most common case, indeed.
-
 last change: 20 Apr 2008
 
 Copyright Alexandre Girão <alexgirao@gmail.com> 2008, 2007
