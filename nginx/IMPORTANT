@@ -1,3 +1,0 @@
-as of version 0.6.29, nginx has serious design flaws related to
-request id, it does not support concurrent connections without
-breaking fastcgi specification
