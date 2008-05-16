@@ -5,7 +5,7 @@
 light and allow requests multiplexing
 '''
 
-# NO_PROXY=\* curl http://localhost:8020/fcgi-inet
+# NO_PROXY=\* curl http://localhost:8020/
 
 import pprint
 
@@ -14,12 +14,10 @@ import twisted.internet.reactor as reactor
 import atma.fastcgi as fastcgi
 import atma.twistedfcgi as twistedfcgi
 
-displaysize = 30
-
 class Handler(object):
 
     def step1(self, request, msg):
-        if not request.stdout:
+        if request.ended:
             # request ended
             return
         request.write(msg)
@@ -27,7 +25,7 @@ class Handler(object):
         reactor.callLater(1, self.step2, request, 'second time\n')
 
     def step2(self, request, msg):
-        if not request.stdout:
+        if request.ended:
             # request ended
             return
         request.write(msg)
@@ -35,7 +33,7 @@ class Handler(object):
         reactor.callLater(1, self.step3, request, 'third time\n')
 
     def step3(self, request, msg):
-        if not request.stdout:
+        if request.ended:
             # request ended
             return
         request.write(msg)
@@ -43,14 +41,14 @@ class Handler(object):
         reactor.callLater(1, self.enough, request, 'ENOUGH!!!\n')
 
     def enough(self, request, msg):
-        if not request.stdout:
+        if request.ended:
             # request ended
             return
         request.write(msg)
         print 'wrote: %r' % msg
         request.end(0)
 
-    def __call__(self, processor, request, type, content):
+    def __call__(self, request, type, content):
         if type == fastcgi.FCGI_ABORT_REQUEST:
             print 'request was aborted'
             return
@@ -59,8 +57,7 @@ class Handler(object):
             # at this point we received all params and we
             # can do our logic, this happens once per request
             
-            request.write('content-type: text/plain\r\n')
-            request.write('\r\n')
+            request.write('content-type: text/plain\r\n\r\n')
             request.write('request id: %i\n' % request.requestId)
             request.write('role: %s\n' % fastcgi.FCGI_ROLE_NAMES[request.role])
             request.write(pprint.pformat(request.params))
@@ -70,8 +67,8 @@ class Handler(object):
 
         if content:
             length = len(content)
-            if length > displaysize:
-                content = content[0:displaysize] + ' ...'
+            if length > 30:
+                content = content[0:30] + ' ...'
         else:
             content = ''
             length = 0
@@ -98,8 +95,8 @@ def test():
     
     fac = twistedfcgi.FastCGIFactory(Handler())
     
-    reactor.listenTCP(8030, fac)
-    #reactor.listenUNIX('fcgi.socket', fac)
+    #reactor.listenTCP(8030, fac)
+    reactor.listenUNIX('fcgi.socket', fac)
     reactor.run()
 
 if __name__ == '__main__':

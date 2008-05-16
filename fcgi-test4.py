@@ -22,13 +22,7 @@ import atma.twistedfcgi as twistedfcgi
 
 displaysize = 30
 
-def endrequest(request):
-    if not request.stdout:
-        # request ended already
-        return
-    request.end(0)
-
-def handler(processor, request, type, content):
+def handler(request, type, content):
     if type == fastcgi.FCGI_ABORT_REQUEST:
         print 'request was aborted'
         return
@@ -37,8 +31,7 @@ def handler(processor, request, type, content):
         # at this point we received all params and we
         # can do our logic, this happens once per request
         
-        request.write('content-type: text/plain\r\n')
-        request.write('\r\n')
+        request.write('content-type: text/plain\r\n\r\n')
         request.write('request id: %i\n' % request.requestId)
         request.write('role: %s\n' % fastcgi.FCGI_ROLE_NAMES[request.role])
         request.write(pprint.pformat(request.params))
@@ -63,11 +56,7 @@ def handler(processor, request, type, content):
 
     if type == fastcgi.FCGI_STDIN and not content:
         request.write('we\'re done, received %i calls\n' % (request.callCount,))
-        #return
-
-        # nginx requires this, think it is a little dumb
-        reactor.callLater(0.1, endrequest, request)
-        return 1
+        return
 
     return 1        # not done yet
 
@@ -78,8 +67,8 @@ def test():
 
     fac = twistedfcgi.FastCGIFactory(handler)
     
-    reactor.listenTCP(8030, fac)
-    #reactor.listenUNIX('fcgi.socket', fac)
+    #reactor.listenTCP(8030, fac)
+    reactor.listenUNIX('fcgi.socket', fac)
     reactor.run()
 
 if __name__ == '__main__':
