@@ -168,7 +168,7 @@ int fcgi_spawn_connection(char *appPath, char *addr, unsigned short port,
 					    (unixsocket,
 					     st.st_mode | S_IRGRP | S_IWGRP)) {
 						fprintf(stderr,
-							"%s.%d: failed to set S_IWGRP to unix socket\n",
+							"%s.%d: failed to set S_IRGRP and S_IWGRP to unix socket\n",
 							__FILE__, __LINE__);
 						exit(errno);
 					}
@@ -258,7 +258,8 @@ void show_help()
 	    " -P <path>    name of PID-file for spawed process\n"
 	    " -n           no fork (for daemontools)\n"
 	    " -v           show version\n" " -h           show this help\n"
-	    "(root only)\n" " -c <dir>     chroot to directory\n"
+	    "(root only)\n"
+	    " -c <dir>     chroot to directory\n"
 	    " -u <user>    change to user-id\n"
 	    " -g <group>   change to group-id\n";
 	write(1, b, strlen(b));
@@ -296,19 +297,13 @@ int main(int argc, char **argv)
 			unixsocket = optarg;	/* unix-domain socket */
 			break;
 		case 'c':
-			if (i_am_root) {
-				changeroot = optarg;
-			}	/* chroot() */
+			changeroot = optarg;
 			break;
 		case 'u':
-			if (i_am_root) {
-				username = optarg;
-			}	/* set user */
+			username = optarg;
 			break;
 		case 'g':
-			if (i_am_root) {
-				groupname = optarg;
-			}	/* set group */
+			groupname = optarg;
 			break;
 		case 'n':
 			nofork = 1;
@@ -469,6 +464,27 @@ int main(int argc, char **argv)
 			setuid(pwd->pw_uid);
 		}
 		gid = grp->gr_gid;
+	} else {
+		if (username) {
+			fprintf(stderr, "%s.%d: %s\n",
+				__FILE__, __LINE__,
+				"need root privileges to change uid");
+			return -1;
+		}
+
+		if (groupname) {
+			fprintf(stderr, "%s.%d: %s\n",
+				__FILE__, __LINE__,
+				"need root privileges to change gid");
+			return -1;
+		}
+
+		if (changeroot) {
+			fprintf(stderr, "%s.%d: %s\n",
+				__FILE__, __LINE__,
+				"need root privileges to change root");
+			return -1;
+		}
 	}
 
 	return fcgi_spawn_connection(fcgi_app, addr, port, unixsocket,
