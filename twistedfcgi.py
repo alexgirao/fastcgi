@@ -8,13 +8,23 @@ import fastcgi
 
 FastCGIConnectionState = fastcgi.FastCGIConnectionState
 
+def _w2(w1, w2, d):
+    w1(d)
+    w2(d)
+
 class FastCGIProtocol(protocol.Protocol):
     '''handles a connection with the web server
     '''
 
     def connectionMade(self):
         self.processor = self.factory.fcgiProcessor
-        self.connectionState = FastCGIConnectionState(self.transport.loseConnection, self.transport.write)
+        write0 = self.transport.write
+        if self.factory.dumpfile:
+            write1 = self.factory.dumpfile.write
+            write = lambda data: _w2(write1, write0, data)
+        else:
+            write = write0
+        self.connectionState = FastCGIConnectionState(self.transport.loseConnection, write)
 
     def dataReceived(self, data):
         self.processor.processRawInput(self.connectionState, data)
@@ -28,8 +38,9 @@ class FastCGIProtocol(protocol.Protocol):
 class FastCGIFactory(protocol.Factory):
     protocol = FastCGIProtocol
 
-    def __init__(self, handler):
+    def __init__(self, handler, dumpfile=None):
         self.handler = handler
+        self.dumpfile = dumpfile
 
     def startFactory(self):
         self.fcgiProcessor = fastcgi.FastCGIProcessor()

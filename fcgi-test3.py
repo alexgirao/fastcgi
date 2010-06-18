@@ -7,7 +7,6 @@ import sys
 
 import fastcgi
 import twistedfcgi
-import handler
 
 import twisted.internet.reactor as reactor
 
