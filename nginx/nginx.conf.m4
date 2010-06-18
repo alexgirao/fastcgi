@@ -1,11 +1,6 @@
-# nginx.conf
-
-# /usr/local/nginx/sbin/nginx -t -c nginx.conf
-# /usr/local/nginx/sbin/nginx -c nginx.conf
-
-#user       www-data www-data;
-worker_processes  5;
 error_log  pwd/logs/error.log;
+
+worker_processes  5;
 pid        pwd/logs/nginx.pid;
 worker_rlimit_nofile 8192;
 

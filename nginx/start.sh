@@ -10,8 +10,11 @@ die(){
     exit $1
 }
 
+NGINX=/usr/sbin/nginx
+
 [ -d logs ] || mkdir logs
 [ -f nginx.conf ] || ./update-conf.sh
-/usr/local/nginx/sbin/nginx -t -c nginx.conf || die 1 "configuration error"
+[ -e $NGINX ] || die 1 "$NGINX not found"
 
-/usr/local/nginx/sbin/nginx -c nginx.conf
+$NGINX -t -c "`pwd`"/nginx.conf || die 1 "configuration error"
+$NGINX -c "`pwd`"/nginx.conf
