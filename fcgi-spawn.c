@@ -463,7 +463,9 @@ int main(int argc, char **argv)
 			}
 			setuid(pwd->pw_uid);
 		}
-		gid = grp->gr_gid;
+		if (grp) {
+			gid = grp->gr_gid;
+		}
 	} else {
 		if (username) {
 			fprintf(stderr, "%s.%d: %s\n",
